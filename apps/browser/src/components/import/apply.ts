@@ -96,16 +96,18 @@ export function openInWebStore(profileId: string, urls: string[]) {
   urls.forEach((url, i) => useBrowser.getState().newTab(windowId, { url, profileId, background: i > 0 }));
 }
 
+export type ImportedGroupSpec = { name: string; pinned?: boolean };
+
 /**
  * Opens imported tabs in the profile's window, in order. Unpinned tabs land in `group` (when given); a tab whose
  * `groupId` names an entry of `groups` lands in a group of that name instead, one group per id, in order of first
- * appearance. Returns how many tabs were opened.
+ * appearance, pinned when the entry says so. Returns how many tabs were opened.
  */
 export function importTabs(
   profileId: string,
   tabs: (Pick<ImportedTab, "url" | "title" | "pinned" | "customTitle"> & { row?: boolean; groupId?: string })[],
   group: string | null,
-  groups: Record<string, string> = {},
+  groups: Record<string, ImportedGroupSpec> = {},
 ): number {
   const usable = tabs.filter((t) => /^(https?|file):/.test(t.url));
   if (!usable.length) return 0;
@@ -133,11 +135,23 @@ export function importTabs(
   }
   useBrowser.setState(s);
   if (group && loose.length) useBrowser.getState().createGroup(loose, { name: group });
-  for (const [groupId, ids] of byGroup) useBrowser.getState().createGroup(ids, { name: groups[groupId] });
+  for (const [groupId, ids] of byGroup) {
+    const spec = groups[groupId]!;
+    const id = useBrowser.getState().createGroup(ids, { name: spec.name });
+    if (id && spec.pinned) useBrowser.getState().moveGroup(id, { pinned: true });
+  }
   return usable.length;
 }
 
+const folderLinks = (n: ImportedNode): ImportedNode[] => (n.children ?? []).flatMap((c) => (c.type === "url" && c.url ? [c] : folderLinks(c)));
+
+/**
+ * An Arc space in the sidebar's own terms: pinned tabs become pinned rows, pinned folders become pinned groups of the
+ * same name (a folder inside one flattens into it, as groups don't nest), Today folders become groups, and what sat
+ * loose in Today lands in "Imported".
+ */
 export function importArcSpace(profileId: string, space: SpaceSuggestion, spaceName: string): { tabs: number; bookmarks: number } {
+  void spaceName;
   const links = space.pinned.filter((n) => n.type === "url" && n.url);
   const folders = space.pinned.filter((n) => n.type === "folder");
   let tabs = importTabs(
@@ -145,23 +159,21 @@ export function importArcSpace(profileId: string, space: SpaceSuggestion, spaceN
     links.map((n) => ({ url: n.url!, title: n.pageTitle ?? n.title, pinned: true, row: true, customTitle: n.pageTitle ? n.title : undefined })),
     null,
   );
-  // Arc's Today folders become groups of the same name; what sat loose in Today lands in "Imported".
-  const groups = Object.fromEntries((space.groups ?? []).map((g) => [g.id, g.title || "Folder"]));
+  const pinnedGroups: Record<string, ImportedGroupSpec> = {};
+  const pinnedMembers = folders.flatMap((f, i) => {
+    const id = `pinned-folder-${i}`;
+    pinnedGroups[id] = { name: f.title || "Folder", pinned: true };
+    return folderLinks(f).map((n) => ({ url: n.url!, title: n.pageTitle ?? n.title, pinned: false, customTitle: n.pageTitle ? n.title : undefined, groupId: id }));
+  });
+  tabs += importTabs(profileId, pinnedMembers, null, pinnedGroups);
+  const groups = Object.fromEntries((space.groups ?? []).map((g) => [g.id, { name: g.title || "Folder" }]));
   tabs += importTabs(profileId, space.tabs.map((t) => ({ ...t, pinned: false })), "Imported", groups);
   const theme = space.theme ? parseArcTheme(space.theme) : null;
   if (theme) {
     adoptProfileTheme(profileId);
     useBrowser.getState().updateProfile(profileId, { theme });
   }
-  let bookmarks = 0;
-  if (folders.length) {
-    const roots = useBrowser.getState().bookmarks.roots[profileId];
-    if (roots) {
-      useBrowser.getState().addBookmarkTree(profileId, [{ title: `${spaceName} (Arc)`, children: folders.map(toDraft) }], roots.bar);
-      bookmarks = linkCount(folders);
-    }
-  }
-  return { tabs, bookmarks };
+  return { tabs, bookmarks: 0 };
 }
 
 function pageKey(url: string): string {

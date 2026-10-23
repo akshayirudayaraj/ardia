@@ -52,6 +52,36 @@ test("a groupId that names no folder is treated as loose", () => {
   assert.deepEqual(groupsByName(), { Imported: ["https://a.example/", "https://b.example/"] });
 });
 
+test("an Arc space's pinned folders become pinned groups, nested folders flattened into them", () => {
+  fresh();
+  const link = (title, url) => ({ type: "url", title, url });
+  importArcSpace("default", {
+    id: "S-4", name: "Study", profileId: "default",
+    pinned: [
+      link("Calendar", "https://cal.example/"),
+      { type: "folder", title: "Courses", children: [link("CS", "https://cs.example/"), { type: "folder", title: "Old", children: [link("Math", "https://math.example/")] }] },
+      { type: "folder", title: "Reading", children: [link("Post", "https://read.example/")] },
+    ],
+    tabs: [tab("https://today.example/", "Today")],
+  }, "Study");
+  assert.deepEqual(groupsByName(), {
+    Courses: ["https://cs.example/", "https://math.example/"],
+    Reading: ["https://read.example/"],
+    Imported: ["https://today.example/"],
+  });
+  const byName = Object.fromEntries(Object.values(S().groups).map((g) => [g.name, g]));
+  assert.equal(byName.Courses.pinned, true);
+  assert.equal(byName.Reading.pinned, true);
+  assert.equal(byName.Imported.pinned, false);
+  const cal = Object.values(S().tabs).find((t) => t.url === "https://cal.example/");
+  assert.equal(cal.pinned, true, "a pinned tab at the folder level stays a pinned row");
+  // Sidebar order: pinned row, then the pinned groups, then the list.
+  assert.deepEqual(windowUrls().filter(Boolean), [
+    "https://cal.example/", "https://cs.example/", "https://math.example/", "https://read.example/", "https://today.example/",
+  ]);
+  assert.equal(Object.keys(S().bookmarks.nodes).filter((id) => S().bookmarks.nodes[id].url).length, 0, "no bookmark copy of the folders");
+});
+
 test("a space without folders imports as before: one Imported group", () => {
   fresh();
   importArcSpace("default", { id: "S-2", name: "Plain", profileId: "default", pinned: [], tabs: [tab("https://a.example/", "A"), tab("https://b.example/", "B")] }, "Plain");
