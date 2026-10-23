@@ -55,6 +55,10 @@ export function startDevHarness() {
     get themes(): typeof import("../components/import/apply") & typeof import("../components/settings/ThemeEditor") {
       return { ...require("../components/import/apply"), ...require("../components/settings/ThemeEditor") };
     },
+    // The native import module, so a hidden instance can run a real import (discovery, parse, apply) end to end.
+    get importApi(): ReturnType<typeof import("../components/import/module").importModule> {
+      return require("../components/import/module").importModule();
+    },
     get bangs(): typeof import("../components/omnibox/bangs") {
       return require("../components/omnibox/bangs");
     },
