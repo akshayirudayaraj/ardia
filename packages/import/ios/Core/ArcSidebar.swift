@@ -26,7 +26,7 @@ public struct ArcSidebar: Equatable {
       let roots = containerIDs(space)
       var seen = Set<String>()
       let pinned = roots["pinned"].map { tree(of: $0, items: items, seen: &seen) } ?? []
-      let today = roots["unpinned"].map { flatTabs(of: $0, items: items, seen: &seen, pinned: false) } ?? []
+      let today = roots["unpinned"].map { todayTabs(of: $0, items: items, seen: &seen) } ?? (tabs: [], groups: [])
       let info = space["customInfo"] as? [String: Any]
       let icon = info?["iconType"] as? [String: Any]
       let name: String
@@ -46,8 +46,9 @@ public struct ArcSidebar: Equatable {
         icon: icon?["icon"] as? String,
         profileId: profile,
         pinned: pinned,
-        tabs: today,
-        theme: json(theme)
+        tabs: today.tabs,
+        theme: json(theme),
+        groups: today.groups.isEmpty ? nil : today.groups
       ))
     }
 
@@ -172,14 +173,46 @@ public struct ArcSidebar: Equatable {
         var link = BookmarkNode.link(t.customTitle ?? t.title, t.url)
         if t.customTitle != nil { link.pageTitle = t.title }
         out.append(link)
-      } else if data["list"] != nil {
+      } else if let name = folderTitle(item) {
         let kids = tree(of: id, items: items, seen: &seen, depth: depth + 1)
-        out.append(.folder(customTitle(item) ?? "Folder", kids))
+        out.append(.folder(name, kids))
       } else if data["splitView"] != nil {
         out += tree(of: id, items: items, seen: &seen, depth: depth + 1)
       }
     }
     return out
+  }
+
+  /// Arc has two folder kinds: the old `list` (its name on the item) and the newer `tabGroup` (its name inside the data).
+  static func folderTitle(_ item: [String: Any]) -> String? {
+    let data = item["data"] as? [String: Any] ?? [:]
+    if data["list"] != nil { return customTitle(item) ?? "Folder" }
+    if let group = data["tabGroup"] as? [String: Any] {
+      return customTitle(item) ?? (group["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Folder"
+    }
+    return nil
+  }
+
+  /// The Today section: tabs in sidebar order. A folder there becomes a group (Arc never cleans up a tab inside a
+  /// folder, and neither does a group here); folders inside a folder flatten into it. Splits flatten into the list.
+  static func todayTabs(of containerID: String, items: [String: [String: Any]], seen: inout Set<String>) -> (tabs: [ImportedTab], groups: [ImportedTabGroup]) {
+    guard let container = items[containerID], seen.insert(containerID).inserted else { return ([], []) }
+    var tabs: [ImportedTab] = []
+    var groups: [ImportedTabGroup] = []
+    for id in container["childrenIds"] as? [String] ?? [] {
+      guard let item = items[id] else { continue }
+      if let t = tab(item, pinned: false) {
+        if seen.insert(id).inserted { tabs.append(t) }
+      } else if let name = folderTitle(item) {
+        let members = flatTabs(of: id, items: items, seen: &seen, pinned: false, depth: 1)
+        guard !members.isEmpty else { continue }
+        groups.append(ImportedTabGroup(id: id, title: name, color: "grey", collapsed: false))
+        tabs += members.map { var t = $0; t.groupId = id; return t }
+      } else {
+        tabs += flatTabs(of: id, items: items, seen: &seen, pinned: false, depth: 1)
+      }
+    }
+    return (tabs, groups)
   }
 
   static func flatTabs(of containerID: String, items: [String: [String: Any]], seen: inout Set<String>, pinned: Bool, depth: Int = 0) -> [ImportedTab] {

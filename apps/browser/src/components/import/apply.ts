@@ -96,16 +96,24 @@ export function openInWebStore(profileId: string, urls: string[]) {
   urls.forEach((url, i) => useBrowser.getState().newTab(windowId, { url, profileId, background: i > 0 }));
 }
 
+/**
+ * Opens imported tabs in the profile's window, in order. Unpinned tabs land in `group` (when given); a tab whose
+ * `groupId` names an entry of `groups` lands in a group of that name instead, one group per id, in order of first
+ * appearance. Returns how many tabs were opened.
+ */
 export function importTabs(
   profileId: string,
-  tabs: (Pick<ImportedTab, "url" | "title" | "pinned" | "customTitle"> & { row?: boolean })[],
+  tabs: (Pick<ImportedTab, "url" | "title" | "pinned" | "customTitle"> & { row?: boolean; groupId?: string })[],
   group: string | null,
+  groups: Record<string, string> = {},
 ): number {
   const usable = tabs.filter((t) => /^(https?|file):/.test(t.url));
   if (!usable.length) return 0;
   const windowId = windowFor(profileId);
   let s = useBrowser.getState();
   const unpinned: string[] = [];
+  const loose: string[] = [];
+  const byGroup = new Map<string, string[]>();
   for (const t of usable) {
     const after = t.pinned ? undefined : unpinned.at(-1);
     const [next, id] = withNewTab(s, windowId, {
@@ -118,10 +126,14 @@ export function importTabs(
     });
     if (!id) continue;
     s = { ...next, tabs: { ...next.tabs, [id]: { ...next.tabs[id]!, navigation: null } } };
-    if (!t.pinned) unpinned.push(id);
+    if (t.pinned) continue;
+    unpinned.push(id);
+    if (t.groupId && t.groupId in groups) byGroup.set(t.groupId, [...(byGroup.get(t.groupId) ?? []), id]);
+    else loose.push(id);
   }
   useBrowser.setState(s);
-  if (group && unpinned.length) useBrowser.getState().createGroup(unpinned, { name: group });
+  if (group && loose.length) useBrowser.getState().createGroup(loose, { name: group });
+  for (const [groupId, ids] of byGroup) useBrowser.getState().createGroup(ids, { name: groups[groupId] });
   return usable.length;
 }
 
@@ -133,7 +145,9 @@ export function importArcSpace(profileId: string, space: SpaceSuggestion, spaceN
     links.map((n) => ({ url: n.url!, title: n.pageTitle ?? n.title, pinned: true, row: true, customTitle: n.pageTitle ? n.title : undefined })),
     null,
   );
-  tabs += importTabs(profileId, space.tabs.map((t) => ({ ...t, pinned: false })), "Imported");
+  // Arc's Today folders become groups of the same name; what sat loose in Today lands in "Imported".
+  const groups = Object.fromEntries((space.groups ?? []).map((g) => [g.id, g.title || "Folder"]));
+  tabs += importTabs(profileId, space.tabs.map((t) => ({ ...t, pinned: false })), "Imported", groups);
   const theme = space.theme ? parseArcTheme(space.theme) : null;
   if (theme) {
     adoptProfileTheme(profileId);

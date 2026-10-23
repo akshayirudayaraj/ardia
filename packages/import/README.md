@@ -18,7 +18,7 @@ the file and its WAL before opening it.
 | cookies | `ChromiumSecrets.swift`: `Network/Cookies` (or `Cookies`) | same as Chromium | `Firefox.swift`: `cookies.sqlite` |
 | autofill (addresses, cards) | `ChromiumAutofill.swift`: `Web Data` | same as Chromium | none |
 | extensions (listed, never installed) | `ChromiumExtensions.swift`: `Preferences`, `Secure Preferences`, `Extensions/*/manifest.json` | same as Chromium | none |
-| spaces, pinnedTabs, favorites | none | `ArcSidebar.swift`: `<Application Support>/Arc/StorableSidebar.json` | none |
+| spaces, pinnedTabs, favorites | none | `ArcSidebar.swift`: `<Application Support>/Arc/StorableSidebar.json`. Pinned folders (`list` and `tabGroup` items) become folders; Today folders become groups (`SpaceSuggestion.groups`, a tab's `groupId`) | none |
 
 | Source | Files | What it reads |
 |---|---|---|

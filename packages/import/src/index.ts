@@ -100,6 +100,8 @@ export type SpaceSuggestion = {
   pinned: BookmarkNode[];
   tabs: ImportedTab[];
   theme?: string;
+  /** Arc's Today folders, in sidebar order; a tab in one carries the folder's id as `groupId`. */
+  groups?: ImportedTabGroup[];
 };
 
 export type ProfileSuggestion = { name: string; color?: string; avatarPath?: string };

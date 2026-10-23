@@ -207,6 +207,8 @@ public struct SpaceSuggestion: Codable, Equatable, Sendable {
   public var pinned: [BookmarkNode]
   public var tabs: [ImportedTab]
   public var theme: String? = nil
+  /// Arc's folders in the Today section, in sidebar order. A tab in one carries the folder's id as `groupId`.
+  public var groups: [ImportedTabGroup]? = nil
 }
 
 public struct ProfileSuggestion: Codable, Equatable, Sendable {
