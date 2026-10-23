@@ -114,10 +114,18 @@ extension TranslateModule {
       seen += piece.count
       var end = i == pieces.count - 1 ? chars.count : min(chars.count, Int((Double(seen) / Double(total) * Double(chars.count)).rounded()))
       if end < chars.count, end > start {
+        // The nearest space within 12 characters, looking after the cut first, then before it.
+        // (A loop: Xcode 26.5's type checker gave up on the lazy flatMap/first chain in a Release build.)
         let window = 12
-        if let space = (0...window).lazy.flatMap({ [end + $0, end - $0] }).first(where: { $0 > start && $0 < chars.count && chars[$0] == " " }) {
-          end = space + 1
+        var space: Int?
+        for offset in 0...window {
+          for candidate in [end + offset, end - offset] where candidate > start && candidate < chars.count && chars[candidate] == " " {
+            space = candidate
+            break
+          }
+          if space != nil { break }
         }
+        if let space { end = space + 1 }
       }
       end = max(start, end)
       out.append(String(chars[start..<end]))

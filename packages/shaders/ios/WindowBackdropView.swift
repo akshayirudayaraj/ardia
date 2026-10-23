@@ -173,9 +173,15 @@ struct ThemeGradient: Equatable {
   var isEmpty: Bool { colors.isEmpty }
 
   static func parse(_ flat: [Double]) -> [SIMD4<Float>] {
-    stride(from: 0, to: flat.count - 3, by: 4).prefix(3).map {
-      SIMD4(Float(flat[$0]), Float(flat[$0 + 1]), Float(flat[$0 + 2]), Float(flat[$0 + 3]))
+    // Spelled out in steps: Xcode 26.5's type checker gave up on this as one expression (Release, x86_64).
+    var out: [SIMD4<Float>] = []
+    var i = 0
+    while i + 3 < flat.count && out.count < 3 {
+      let r = Float(flat[i]), g = Float(flat[i + 1]), b = Float(flat[i + 2]), a = Float(flat[i + 3])
+      out.append(SIMD4<Float>(r, g, b, a))
+      i += 4
     }
+    return out
   }
 
   var forcedAppearance: NSAppearance? {
