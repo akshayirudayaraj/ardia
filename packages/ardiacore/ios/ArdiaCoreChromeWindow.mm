@@ -2114,6 +2114,37 @@ NSDictionary *ProbeFrame(NSWindow *window, ACWindowFullScreen *state, CFTimeInte
     id r = window.firstResponder;
     return [r isKindOfClass:NSView.class] ? Describe(r) : NSStringFromClass([r class]);
   }
+  if ([action hasPrefix:@"traceMouse"]) {
+    // Dev probe: every left mouse down/up NSApp dispatches, and which of them the window's sendEvent: receives.
+    static id monitor;
+    static NSMutableArray<NSString *> *seen;
+    if (!monitor) {
+      seen = [NSMutableArray array];
+      monitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown | NSEventMaskLeftMouseUp handler:^NSEvent *(NSEvent *e) {
+        [seen addObject:[NSString stringWithFormat:@"app %@ win=%ld at=%.0f,%.0f key=%d modal=%@", e.type == NSEventTypeLeftMouseDown ? @"down" : @"up", (long)e.windowNumber, e.locationInWindow.x, e.locationInWindow.y, e.window.isKeyWindow, NSApp.modalWindow ? @"yes" : @"no"]];
+        return e;
+      }];
+      Class cls = [window class];
+      SEL sel = @selector(sendEvent:);
+      Method m = class_getInstanceMethod(cls, sel);
+      IMP original = method_getImplementation(m);
+      IMP traced = imp_implementationWithBlock(^void(NSWindow *w, NSEvent *e) {
+        if (e.type == NSEventTypeLeftMouseDown || e.type == NSEventTypeLeftMouseUp)
+          [seen addObject:[NSString stringWithFormat:@"window %@ win=%ld hit=%@", e.type == NSEventTypeLeftMouseDown ? @"down" : @"up", (long)w.windowNumber, Describe([w.contentView.superview hitTest:e.locationInWindow])]];
+        ((void (*)(id, SEL, NSEvent *))original)(w, sel, e);
+      });
+      method_setImplementation(m, traced);
+    }
+    NSString *out = [seen componentsJoinedByString:@"\n"];
+    [seen removeAllObjects];
+    return out;
+  }
+  if ([action isEqualToString:@"key"]) {
+    NSWindow *k = NSApp.keyWindow;
+    return [NSString stringWithFormat:@"key=%d main=%d appKey=%@ active=%d", window.isKeyWindow, window.isMainWindow,
+                                      k ? [NSString stringWithFormat:@"%ld %@", (long)k.windowNumber, NSStringFromClass([k class])] : @"none",
+                                      NSApp.isActive];
+  }
   if ([action isEqualToString:@"lights"]) {
     NSButton *close = [window standardWindowButton:NSWindowCloseButton];
     if (!close) return nil;
